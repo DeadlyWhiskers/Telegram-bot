@@ -14,7 +14,7 @@ class SceneGen {
     ShowError(ctx){
         ctx.reply('Извините, произошла ошибка', 
             Markup.inlineKeyboard([
-            Markup.button.callback('В главное меню', 'reenterMenu')])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+            Markup.button.callback('В главное меню', 'returnToMainMenu')])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
     }
 
     GenMainScene() {
@@ -29,8 +29,6 @@ class SceneGen {
 reply_markup: Markup.inlineKeyboard([
                 [Markup.button.callback('Цены и корпуса🏢','pricelist'),
                 Markup.button.callback('Узнать о питании🥐','foodlist')],
-                [Markup.button.callback('Кнопка3','b3'),
-                Markup.button.callback('Кнопка4','b4')],
                 [Markup.button.callback('Бронь🗓️','reservationMenu')]
             ]).reply_markup
         })).message_id)
@@ -70,6 +68,10 @@ reply_markup: Markup.inlineKeyboard([
             })).message_id)
         })
         MainScene.action('reenterMenu', async (ctx) => {
+            this.ClearScreen(ctx)
+            ctx.scene.reenter()
+        })
+        MainScene.action('returnToMainMenu', async (ctx) => {
             this.ClearScreen(ctx)
             ctx.scene.reenter()
         })
@@ -125,7 +127,11 @@ reply_markup: Markup.inlineKeyboard([
         MainScene.action('reservationMenu', async (ctx) => {
             this.ClearScreen(ctx)
             console.log(ctx.from.first_name, ctx.from.last_name, ctx.update.callback_query.from.username)
-            userPool.query(`select * from reservation where reservation_id = ${ctx.from.id}`).then(result => {
+            userPool.query(`select building_name, room.room_id, feeding_type.feeding_name, reservation.reservation_price, to_char(date_in, 'YYYY-MM-DD') as date_in, to_char(date_out, 'YYYY-MM-DD') as date_out,
+            extract(day from date_out::timestamp-date_in::timestamp) as nights 
+            from reservation join feeding_type on feeding_type.feeding_id = reservation.feeding_id
+            join room on room.room_id = reservation.room_id join building on building.building_id = room.building_id where reservation_id = ${ctx.from.id}`).then(result => {
+                ctx.session.reservation = result
                 if(result.rowCount == 0){
                     ctx.reply('Вы пока не бронировали у нас мест, хотите это сделать?',
                     Markup.inlineKeyboard([
@@ -134,7 +140,32 @@ reply_markup: Markup.inlineKeyboard([
                     ])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
                 }
                 else{
-                    ctx.reply('беброчка')
+                    userPool.query(`select * from guest join reservation_rel on guest.guest_id = reservation_rel.guest_id
+                    where reservation_id = ${ctx.from.id}`).then(result => {
+                        ctx.session.guests = ''
+                        result.rows.forEach(row => {
+                            ctx.session.guests += `${row.guest_name} ${row.guest_surname} ${row.guest_patronymic}\n`
+                        })
+                        ctx.replyWithPhoto({source: './photos/reception.jfif'},
+                        {
+                            caption: `Здравствуйте, ${ctx.from.first_name}, вы забронировали места на ${result.rowCount} человек в номере ${ctx.session.reservation.rows[0].room_id} на даты:
+${ctx.session.reservation.rows[0].date_in.split('-').join('.')} \u2014 ${ctx.session.reservation.rows[0].date_out.split('-').join('.')} (${ctx.session.reservation.rows[0].nights} ночей).
+Корпус проживания \u2014 ${ctx.session.reservation.rows[0].building_name}
+Тип питания \u2014 ${ctx.session.reservation.rows[0].feeding_name}
+Общая стоимость \u2014 ${ctx.session.reservation.rows[0].reservation_price} руб.
+
+Список проживающих:
+${ctx.session.guests}`,
+                        reply_markup: Markup.inlineKeyboard([
+                            [Markup.button.callback('В главное меню🏠','reenterMenu')],
+                            [Markup.button.callback('Список процедур🩺','seeProcedures'),
+                            Markup.button.callback('Удалить бронь🗑️','removeReservation')]
+                        ]).reply_markup
+                        }).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
+                    }).catch(e => {
+                        console.log(e)
+                        this.ShowError(ctx)
+                    })
                 }
             }).catch(e => {
                 console.log(e)
@@ -145,6 +176,54 @@ reply_markup: Markup.inlineKeyboard([
             await this.ClearScreen(ctx)
             ctx.scene.enter('DateInScene')
         })
+        MainScene.action('removeReservation', async (ctx) => {
+            await this.ClearScreen(ctx)
+            ctx.reply(`Вы действительно хотите удалить бронь?:`,
+                    Markup.inlineKeyboard([
+                        Markup.button.callback('Да✅', 'removeReservationQuery'),
+                        Markup.button.callback('Нет❌', 'reservationMenu')
+                    ])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+        })
+        MainScene.action('removeReservationQuery', async (ctx) => {
+            await this.ClearScreen(ctx)
+            userPool.query(`select delete_reservation(${ctx.from.id})`).then(()=>{
+                ctx.reply(`Бронь успешно удалена`,
+                Markup.inlineKeyboard([
+                    Markup.button.callback('Понятно👍', 'reenterMenu')
+                ])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+            }).catch(e => {
+                console.log(e)
+                this.ShowError(ctx)
+            })
+        })
+        MainScene.action('seeProcedures', async (ctx) => {
+            await this.ClearScreen(ctx)
+            userPool.query(`select guest_name, dense_rank() over (ORDER BY guest_name)-1 as guest_pos, guest_surname, guest_patronymic, doctor_patronymic, doctor_name, doctor_specialization, procedure_name, to_char(procedure_day, 'YYYY-MM-DD') as procedure_day, to_char(procedure_start, 'HH24:MI') as procedure_start, to_char(procedure_end, 'HH24:MI') as procedure_end, procedure_price, cabinet 
+            from procedure_appointment join guest on 
+            procedure_appointment.guest_id = guest.guest_id join procedure_ on 
+            procedure_appointment.procedure_id = procedure_.procedure_id join doctor on
+            procedure_.doctor_id = doctor.doctor_id 
+            join reservation_rel on 
+            guest.guest_id = reservation_rel.guest_id where reservation_id = ${ctx.from.id}`).then(result => {
+                if (result.rowCount != 0){ctx.session.procedureList = []
+                    for (ctx.session.tempi = 0; ctx.session.tempi <= Math.max(...result.rows.map(row => parseInt(row.guest_pos))); ctx.session.tempi++)
+                    ctx.session.procedureList.push('')
+                    result.rows.forEach((item, index) => {
+                        if(ctx.session.procedureList[item.guest_pos].length == 0) ctx.session.procedureList[item.guest_pos] = `${parseInt(item.guest_pos)+1} ${item.guest_name} ${item.guest_surname}:\n`
+                        ctx.session.procedureList[item.guest_pos] += `   ${item.procedure_name}\n   Время: ${item.procedure_start}-${item.procedure_end} Дата: ${item.procedure_day.split('-').join('.')}\n   Врач: ${item.doctor_name} ${item.doctor_patronymic}\n   ${item.doctor_specialization}\n   Кабинет: ${item.cabinet} Цена:${item.procedure_price} руб.\n\n`
+                    })
+                    ctx.session.procedureList = ctx.session.procedureList.join('')
+                    ctx.reply(`Вот список всех ваших процедур:\n${ctx.session.procedureList}`,
+                    Markup.inlineKeyboard([
+                        Markup.button.callback('Понятно✅', 'reservationMenu')
+                    ])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+                }
+                else (ctx.reply('Ни у кого из вашего номера нет назначенных процедур.', Markup.inlineKeyboard([Markup.button.callback('Понятно✅', 'reservationMenu')])).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id)))
+            }).catch(e => {
+                console.log(e)
+                this.ShowError(ctx)
+            })
+        })
         return MainScene
     }
     GenDateInScene(){
@@ -152,28 +231,24 @@ reply_markup: Markup.inlineKeyboard([
             DateInScene.enter(async (ctx) => {
                 ctx.session.message_id_tempMG.push((await ctx.reply('Здравствуйте, вы попали в меню бронирования.')).message_id)
                 ctx.session.message_id_tempMG.push((await ctx.reply('Введите дату вашего заеда', {reply_markup: {force_reply: true, input_field_placeholder: 'YYYY MM DD'}})).message_id)
-                console.log(ctx.session.message_id_tempMG)
                 ctx.session.message_id_tempMG.push((await ctx.reply('ㅤ', Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
-                console.log(ctx.session.message_id_tempMG)
             })
             DateInScene.on(message('text'), async (ctx) => {
                 ctx.session.date = []
                 ctx.session.message_id_tempMG.push(ctx.message.message_id)
-            if (ctx.message.text.trim().split(' ').length != 3) {
+            if (ctx.message.text.trim().split(/\s+/).length != 3) {
                     await this.ClearScreen(ctx)
                     await ctx.session.message_id_tempMG.push((await ctx.reply('Дата была введена неверно')).message_id)
                     ctx.scene.reenter()
             }
             else{
                 await this.ClearScreen(ctx)
-                ctx.message.text.trim().split(' ').forEach(async item => {
+                ctx.message.text.trim().split(/\s+/).forEach(async item => {
                 if(isNaN(item)){
                     await ctx.session.message_id_tempMG.push((await ctx.reply('Дата была введена неверно')).message_id)
                     ctx.scene.reenter()
                 }
                 ctx.session.date.push(item)})
-                console.log(ctx.session.date)
-                console.log(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`))
                 if(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`) == 0 ||
                 isNaN(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`)) ||
                 Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`) < new Date())
@@ -317,7 +392,6 @@ reply_markup: Markup.inlineKeyboard([
         const GuestsScene = new Scenes.BaseScene('GuestsScene')
         GuestsScene.enter(async (ctx) => {
             ctx.session.message_id_tempMG.push((await ctx.reply('Теперь введите даннные всех гостей подряд: Имя Фамилия Отчество(если нет, то поставить 0) Пол(М/Ж) Возраст Телефон?', {reply_markup: {force_reply: true, input_field_placeholder: 'Вводить сюда'}})).message_id)
-            console.log(ctx.session.message_id_tempMG)
             ctx.session.message_id_tempMG.push((await ctx.reply('ㅤ', Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
         })
         GuestsScene.on(message('text'), async ctx => {
@@ -328,7 +402,6 @@ reply_markup: Markup.inlineKeyboard([
             ctx.message.text.trim().split(/\s+/).forEach(item => {
                 ctx.session.guests.push(item)
             })
-            console.log(ctx.session.guests)
             if(ctx.session.guests.length < 6*ctx.session.amount){
                 await this.ClearScreen(ctx)
                 await ctx.session.message_id_tempMG.push((await ctx.reply('Неправильно введены гости')).message_id)
@@ -336,19 +409,17 @@ reply_markup: Markup.inlineKeyboard([
             }
             else {
                 for(ctx.session.tempi = 0; ctx.session.tempi < ctx.session.amount; ctx.session.tempi++){
-                    console.log(6*ctx.session.tempi+3, ctx.session.guests[6*ctx.session.tempi+3])
-                if(ctx.session.guests[6*ctx.session.tempi+3] != 'М' && ctx.session.guests[6*ctx.session.tempi+3] != 'Ж'){
+                if(ctx.session.guests[6*ctx.session.tempi+3] != 'М' && ctx.session.guests[6*ctx.session.tempi+3] != 'м' && ctx.session.guests[6*ctx.session.tempi+3] != 'Ж' && ctx.session.guests[6*ctx.session.tempi+3] != 'ж'){
                     console.log(ctx.session.guests[6*ctx.session.tempi+3], 'sex fail')
                     ctx.session.failed = true
-                }else if (ctx.session.guests[6*ctx.session.tempi+3] == 'М') {ctx.session.guests[6*ctx.session.tempi+3] = 'M'
+                }else if (ctx.session.guests[6*ctx.session.tempi+3] == 'М' || ctx.session.guests[6*ctx.session.tempi+3] == 'м') {ctx.session.guests[6*ctx.session.tempi+3] = 'M'
             }
-                else if (ctx.session.guests[6*ctx.session.tempi+3] == 'Ж') ctx.session.guests[6*ctx.session.tempi+3] = 'F'
+                else if (ctx.session.guests[6*ctx.session.tempi+3] == 'Ж' || ctx.session.guests[6*ctx.session.tempi+3] == 'ж') ctx.session.guests[6*ctx.session.tempi+3] = 'F'
                 if(isNaN(ctx.session.guests[6*ctx.session.tempi+4])){
                     console.log(ctx.session.guests[6*ctx.session.tempi+4], 'nan fail')
                     ctx.session.failed = true
                 }
             }
-            console.log(ctx.session.guests)
             if(ctx.session.failed == true){
                     await this.ClearScreen(ctx)
                     await ctx.session.message_id_tempMG.push((await ctx.reply('Неправильно введены гости')).message_id)
@@ -361,25 +432,40 @@ reply_markup: Markup.inlineKeyboard([
     GenConfirmationScene(){
         const ConfirmationScene = new Scenes.BaseScene('ConfirmationScene')
         ConfirmationScene.enter(async (ctx) => {
+            console.log(ctx.session.guests)
+            console.log(ctx.session.room_id)
+            console.log(ctx.session.amount)
+            console.log(ctx.session.feeding_id)
+            console.log(ctx.session.formattedDateIn)
+            console.log(ctx.session.formattedDateOut)
+            console.log('Метка')
             ctx.session.addQuery = ''
             ctx.session.curval = parseInt((await userPool.query('SELECT last_value FROM guest_id_seq')).rows[0].last_value)+1
+            console.log('Метка')
             ctx.session.addQuery += 'insert into guest values'
+            console.log('Метка')
             for(ctx.session.tempi = 0; ctx.session.tempi < ctx.session.amount; ctx.session.tempi++){
                 ctx.session.addQuery += `(nextval('guest_id_seq'), '${ctx.session.guests[6*ctx.session.tempi+5]}', '${ctx.session.guests[6*ctx.session.tempi]}',
                 '${ctx.session.guests[6*ctx.session.tempi+1]}', '${ctx.session.guests[6*ctx.session.tempi+2]}', '${ctx.session.guests[6*ctx.session.tempi+3]}', ${ctx.session.guests[6*ctx.session.tempi+4]}),`
             }
+            console.log('Метка')
             ctx.session.addQuery = ctx.session.addQuery.substring(0, ctx.session.addQuery.length-1) + ';\n'
+            console.log('Метка')
             ctx.session.addQuery += `insert into reservation values(${ctx.from.id},${ctx.session.room_id},
                 ${ctx.session.formattedDateIn},
                 ${ctx.session.formattedDateOut},
                 ${ctx.session.feeding_id},0,${ctx.session.amount});\n`
                 ctx.session.addQuery += 'insert into reservation_rel values '
+                console.log('Метка')
             for(ctx.session.tempi = 0; ctx.session.tempi < ctx.session.amount; ctx.session.tempi++){
                 ctx.session.addQuery += `(${ctx.from.id}, ${parseInt(ctx.session.curval)+ctx.session.tempi}),`
             }
+            console.log('Метка')
             ctx.session.addQuery = ctx.session.addQuery.substring(0, ctx.session.addQuery.length-1) + ';\n'
+            console.log('Метка')
             console.log(ctx.session.addQuery)
             userPool.query(ctx.session.addQuery).then(result => {
+                console.log('Метка')
                 ctx.reply('Бронь успешно создана', Markup.inlineKeyboard([Markup.button.callback('Ура✅', 'returnToMainMenu')])).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
             }).catch(e => {
                 console.log(e)
