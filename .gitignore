@@ -1,3 +1,4 @@
 OLD CODE
 node_modules
 *.zip
+.env
