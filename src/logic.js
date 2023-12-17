@@ -11,9 +11,14 @@ const RoomScene = SceneGenerator.GenRoomScene()
 const FoodScene = SceneGenerator.GenFoodScene()
 const ConfirmationScene = SceneGenerator.GenConfirmationScene()
 const GuestsScene = SceneGenerator.GenGuestsnScene()
+const DoctorGuardScene = SceneGenerator.GenDoctorGuardScene()
+const DoctorNameScene = SceneGenerator.GenDoctorNameScene()
+const DoctorSpecializationScene = SceneGenerator.GenDoctorSpecializationScene()
+const DoctorMainMenu = SceneGenerator.GenDoctorMainMenu()
 
 //Using the scenes
-const stage = new Scenes.Stage([MainScene, DateInScene, DaysOutScene, PeopleAmountScene, RoomScene, FoodScene, ConfirmationScene, GuestsScene])
+const stage = new Scenes.Stage([MainScene, DateInScene, DaysOutScene, PeopleAmountScene, RoomScene, FoodScene, ConfirmationScene, GuestsScene,
+    DoctorGuardScene, DoctorNameScene, DoctorSpecializationScene, DoctorMainMenu])
 bot.use(session())
 bot.use(stage.middleware())
 

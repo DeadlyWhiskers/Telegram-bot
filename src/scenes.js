@@ -47,14 +47,7 @@ reply_markup: Markup.inlineKeyboard([
         })
         MainScene.action('doctorMenu', async (ctx) => {
             this.ClearScreen(ctx)
-            ctx.session.message_id_tempMG.push((await ctx.replyWithPhoto({source: './photos/doctor.jpg'}, 
-            {
-                caption: `Здравствуйте, (Сюда вставить имя врача, полученное из бд),
-Добро пожаловать в меню врача, что вы хотите сделать?`,
-                reply_markup: Markup.inlineKeyboard(
-                    [Markup.button.callback('Выход из меню❌','reenterMenu')]
-                ).reply_markup
-            })).message_id)
+            ctx.scene.enter('DoctorGuardScene')
         })
         MainScene.action('adminMenu', async (ctx) => {
             this.ClearScreen(ctx)
@@ -477,6 +470,112 @@ ${ctx.session.guests}`,
             ctx.scene.enter('MainScene')
         })
         return ConfirmationScene
+    }
+    GenDoctorGuardScene(){
+        const DoctorGuardScene = new Scenes.BaseScene('DoctorGuardScene')
+        DoctorGuardScene.enter(async (ctx) => {
+            ctx.session.message_id_tempMG.push((await ctx.reply('Для входа в меню введите пароль:', Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
+        })
+        DoctorGuardScene.action('returnToMainMenu', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('MainScene')
+        })
+        DoctorGuardScene.on(message('text'), async ctx => {
+            ctx.session.message_id_tempMG.push(ctx.message.message_id)
+            if(ctx.message.text != process.env.DOCTOR_PASSWORD) {
+                await this.ClearScreen(ctx)
+                ctx.session.message_id_tempMG.push((await ctx.reply('Пароль введён неверно')).message_id)
+            }
+            else {
+                await this.ClearScreen(ctx)
+                doctorPool.query(`select * from doctor where doctor_id = ${ctx.from.id}`).then(result => {
+                    if(result.rowCount == 0){
+                        ctx.scene.enter('DoctorNameScene')
+                    }
+                    else{
+                        ctx.session.doctorInfo = result.rows[0]
+                        ctx.scene.enter('DoctorMainMenu')
+                    }
+                }).catch(e => {
+                    console.log(e)
+                    this.ShowError(ctx)
+                })
+            }
+        })
+        return DoctorGuardScene
+    }
+    GenDoctorNameScene(){
+        const DoctorNameScene = new Scenes.BaseScene('DoctorNameScene')
+        DoctorNameScene.enter(async (ctx) => {
+            ctx.session.message_id_tempMG.push((await ctx.reply('Здравствуйте, кажется, вы здесь впервые, введите свои ФИО (Если отчества нет, то поставьте 0):', Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
+        })
+        DoctorNameScene.action('returnToMainMenu', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('MainScene')
+        })
+        DoctorNameScene.on(message('text'), async ctx => {
+            ctx.session.message_id_tempMG.push(ctx.message.message_id)
+            if (ctx.message.text.trim().split(/\s+/).length != 3){
+                ctx.session.message_id_tempMG.push((await ctx.reply('ФИО введены неверно')).message_id)
+            }
+            else {
+                ctx.session.doctorInfot = ctx.message.text.trim().split(/\s+/)
+                ctx.session.doctorInfo = {
+                    doctor_surname: ctx.session.doctorInfot[0],
+                    doctor_name: ctx.session.doctorInfot[1],
+                    doctor_patronymic: ctx.session.doctorInfot[2]
+                }
+                await this.ClearScreen(ctx)
+                ctx.scene.enter('DoctorSpecializationScene')
+            }
+        })
+        return DoctorNameScene
+    }
+    GenDoctorSpecializationScene(){
+        const DoctorSpecializationScene = new Scenes.BaseScene('DoctorSpecializationScene')
+        DoctorSpecializationScene.enter(async (ctx) => {
+            ctx.session.message_id_tempMG.push((await ctx.reply('Теперь укажите свою специализацию', Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
+        })
+        DoctorSpecializationScene.action('returnToMainMenu', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('MainScene')
+        })
+        DoctorSpecializationScene.on(message('text'), async ctx => {
+            ctx.session.message_id_tempMG.push(ctx.message.message_id)
+            if (ctx.message.text.trim().split(/\s+/).length > 30){
+                ctx.session.message_id_tempMG.push((await ctx.reply('Слишком длинное название')).message_id)
+            }
+            else {
+                ctx.session.doctorInfo.doctor_specialization = ctx.message.text
+                await this.ClearScreen(ctx)
+                doctorPool.query(`Insert into doctor values(${ctx.from.id}, '${ctx.session.doctorInfo.doctor_name}', '${ctx.session.doctorInfo.doctor_surname}', '${ctx.session.doctorInfo.doctor_patronymic}', '${ctx.session.doctorInfo.doctor_specialization}')`).then(() => {
+                    ctx.scene.enter('DoctorMainMenu')
+                }).catch(e => {
+                    console.log(e)
+                    this.ShowError(ctx)
+                })
+            }
+        })
+        return DoctorSpecializationScene
+    }
+    GenDoctorMainMenu(){
+        const DoctorMainMenu = new Scenes.BaseScene('DoctorMainMenu')
+        DoctorMainMenu.enter(async (ctx) => {
+            ctx.session.message_id_tempMG.push((await ctx.replyWithPhoto({source: './photos/doctor.jpg'}, 
+            {
+                caption: `Здравствуйте, ${ctx.session.doctorInfo.doctor_name} ${ctx.session.doctorInfo.doctor_patronymic}, Добро пожаловать в меню врача, что вы хотите сделать?`,
+                reply_markup: Markup.inlineKeyboard([
+                    [Markup.button.callback('Управление процедурами🩺','proceduresMenu')],
+                    [Markup.button.callback('Работы с гостями🙋','guestsMenu')],
+                    [Markup.button.callback('Выход из меню❌','returnToMainMenu')]
+                ]
+                ).reply_markup
+            })).message_id)
+        })
+        DoctorMainMenu.action('returnToMainMenu', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('MainScene')
+        })
     }
 }
 
