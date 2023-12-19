@@ -703,7 +703,7 @@ ${ctx.session.guests}`,
             await this.ClearScreen(ctx)
                 if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorMainMenu')
                 else if(ctx.update.callback_query.data == 'guestProceduresMenu') ctx.scene.enter('DoctorMainMenu')
-                else if(ctx.update.callback_query.data == 'guestIllnessMenu') ctx.scene.enter('guestIllnessMenuScene')
+                else if(ctx.update.callback_query.data == 'guestIllnessMenu') ctx.scene.enter('GuestIllnessMenuScene')
                 else {
                 ctx.session.currentGuest = ctx.update.callback_query.data
                 // ctx.scene.enter('RoomScene')
@@ -714,11 +714,11 @@ ${ctx.session.guests}`,
                     ctx.session.guestInfoText = `Гость: ${ctx.session.guestInfo.guest_surname} ${ctx.session.guestInfo.guest_name} ${ctx.session.guestInfo.guest_patronymic}\nНомер проживания: ${ctx.session.guestInfo.room_id}\nДаты: ${ctx.session.guestInfo.date_in} \u2014 ${ctx.session.guestInfo.date_out}\n`
                     ctx.session.guestInfoText += 'Процедуры:\n'
                     ctx.session.guestProcedures.forEach((item, index) => {
-                        ctx.session.guestInfoText+=`${index}. ${item.procedure_name}\n${item.procedure_start}-${item.procedure_end}\nДата: ${item.procedure_day.split('-').join('.')}\nЦена:${item.procedure_price.split('-').join('.')}\n\n`
+                        ctx.session.guestInfoText+=`${index+1}. ${item.procedure_name}\n${item.procedure_start}-${item.procedure_end}\nДата: ${item.procedure_day.split('-').join('.')}\nЦена:${item.procedure_price.split('-').join('.')}\n\n`
                     })
                     ctx.session.guestInfoText += 'Болезни:\n'
                     ctx.session.guestIllness.forEach((item, index) => {
-                        ctx.session.guestInfoText+=`${index}. ${item.illness_name}\n\n`
+                        ctx.session.guestInfoText+=`${index+1}. ${item.illness_name}\n`
                     })
                     ctx.session.message_id_tempMG.push((await ctx.reply(ctx.session.guestInfoText,  Markup.inlineKeyboard([
                         [Markup.button.callback('Управления процедурами🩺', 'guestProceduresMenu')],
@@ -732,6 +732,76 @@ ${ctx.session.guests}`,
             }
     })
         return DoctorGuestsScene
+    }
+    GenGuestIllnessMenuScene(){
+        const GuestIllnessMenuScene = new Scenes.BaseScene('GuestIllnessMenuScene')
+        GuestIllnessMenuScene.enter(async (ctx) => {
+            doctorPool.query(`select illness_name from illness where guest_id = ${ctx.session.currentGuest}`).then(result => {
+                ctx.session.buttonlist = []
+                result.rows.forEach(item => {
+                    ctx.session.buttonlist.push([Markup.button.callback(`${item.illness_name}`,item.illness_name)])
+                });
+                ctx.session.buttonlist.push([Markup.button.callback('Добавить➕', 'AddIllness')])
+                ctx.session.buttonlist.push([Markup.button.callback('Отмена❌', 'returnToMainMenu')])
+                ctx.reply('Вот все болезни данного пациента, для удаления нажмите на нужную болезнь.',
+                Markup.inlineKeyboard(ctx.session.buttonlist)).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
+            }).catch(e => {
+                console.log(e)
+                this.ShowError(ctx)
+            })
+        })
+        GuestIllnessMenuScene.action(/.*/, async (ctx) => {
+                await this.ClearScreen(ctx)
+                    if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorGuestsScene')
+                    else if(ctx.update.callback_query.data == 'doNotDelete') ctx.scene.reenter()
+                    else if(ctx.update.callback_query.data == 'deleteCurIllness') {
+                        try{
+                            await doctorPool.query(`delete from illness where illness_name = '${ctx.session.currentIllness}'`)
+                        }
+                        catch(e){
+                            console.log(e)
+                            this.ShowError(ctx)
+                        }
+                        ctx.scene.reenter()
+                    }
+                    else if(ctx.update.callback_query.data == 'AddIllness') {ctx.scene.enter('GuestIllnessAddScene')}
+                    else {
+                    ctx.session.currentIllness = ctx.update.callback_query.data
+                    // ctx.scene.enter('RoomScene')
+                    ctx.session.message_id_tempMG.push((await ctx.reply(`Вы действительно хотите удалить ${ctx.session.currentIllness}?`,  Markup.inlineKeyboard([
+                        [Markup.button.callback('Да✅', 'deleteCurIllness')],
+                        [Markup.button.callback('Нет❌', 'doNotDelete')]]))).message_id)
+                }
+        })
+        return GuestIllnessMenuScene
+    }
+    GenGuestIllnessAddScene(){
+        const GuestIllnessAddScene = new Scenes.BaseScene('GuestIllnessAddScene')
+        GuestIllnessAddScene.enter(async (ctx) => {
+            ctx.session.message_id_tempMG.push((await ctx.reply(`Введите название новой болезни`, 
+            Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
+        })
+        GuestIllnessAddScene.action('returnToMainMenu', async (ctx) => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('GuestIllnessMenuScene')
+        })
+        GuestIllnessAddScene.on(message('text'), async (ctx) => {
+            await this.ClearScreen(ctx)
+            ctx.session.message_id_tempMG.push(ctx.message.message_id)
+            ctx.session.newIllnessName = ctx.message.text
+            try{
+                await doctorPool.query(`insert into illness values(${ctx.session.currentGuest}, '${ctx.session.newIllnessName}')`)
+                ctx.session.message_id_tempMG.push((ctx.reply(`Болезнь успешно добавлена`,
+                Markup.inlineKeyboard([
+                    Markup.button.callback('Понятно👍', 'returnToMainMenu')
+                ]))).message_id)
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+        })
+        return GuestIllnessAddScene
     }
 }
 
