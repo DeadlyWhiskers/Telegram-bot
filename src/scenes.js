@@ -244,8 +244,9 @@ ${ctx.session.guests}`,
                 ctx.session.date.push(item)})
                 if(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`) == 0 ||
                 isNaN(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`)) ||
-                Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`) < new Date())
+                new Date(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`).setHours(0,0,0,0) < new Date().setHours(0,0,0,0))
                 {
+                    console.log(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`), new Date())
                     await ctx.session.message_id_tempMG.push((await ctx.reply('Дата была введена неверно')).message_id)
                     ctx.scene.reenter()
                 }
@@ -685,7 +686,7 @@ ${ctx.session.guests}`,
         const DoctorGuestsScene = new Scenes.BaseScene('DoctorGuestsScene')
         DoctorGuestsScene.enter(async (ctx) => {
             doctorPool.query(`select guest.guest_id, guest_name, guest_surname, room_id from guest join
-            reservation_rel on guest.guest_id = reservation_rel.guest_id join reservation on reservation.reservation_id = reservation_rel.reservation_id`).then(result => {
+            reservation_rel on guest.guest_id = reservation_rel.guest_id join reservation on reservation.reservation_id = reservation_rel.reservation_id where (NOW()::DATE BETWEEN date_in AND date_out)`).then(result => {
                 ctx.session.buttonlist = []
                 result.rows.forEach(item => {
                     ctx.session.buttonlist.push([Markup.button.callback(`${item.guest_name} ${item.guest_surname} Ном    ${item.room_id}`,item.guest_id)])
@@ -698,10 +699,38 @@ ${ctx.session.guests}`,
                 this.ShowError(ctx)
             })
         })
-        DoctorGuestsScene.action('returnToMainMenu', async ctx => {
+        DoctorGuestsScene.action(/.*/, async (ctx) => {
             await this.ClearScreen(ctx)
-            ctx.scene.enter('DoctorMainMenu')
-        })
+                if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorMainMenu')
+                else if(ctx.update.callback_query.data == 'guestProceduresMenu') ctx.scene.enter('DoctorMainMenu')
+                else if(ctx.update.callback_query.data == 'guestIllnessMenu') ctx.scene.enter('guestIllnessMenuScene')
+                else {
+                ctx.session.currentGuest = ctx.update.callback_query.data
+                // ctx.scene.enter('RoomScene')
+                try{
+                    ctx.session.guestInfo = (await doctorPool.query(`select guest_surname, guest_name, guest_patronymic,  to_char(date_in, 'YYYY-MM-DD') as date_in,  to_char(date_out, 'YYYY-MM-DD') as date_out, room_id from guest join reservation_rel on reservation_rel.guest_id = guest.guest_id join reservation on reservation_rel.reservation_id = reservation.reservation_id where guest.guest_id = ${ctx.session.currentGuest}`)).rows[0]
+                    ctx.session.guestProcedures = (await doctorPool.query(`select procedure_name, to_char(procedure_start, 'HH24:MI') as procedure_start, to_char(procedure_end, 'HH24:MI') as procedure_end,  to_char(procedure_day, 'DD-MM') as procedure_day, procedure_price from procedure_appointment join procedure_ on procedure_appointment.procedure_id = procedure_.procedure_id where guest_id = ${ctx.session.currentGuest}`)).rows
+                    ctx.session.guestIllness = (await doctorPool.query(`select illness_name from illness where guest_id = ${ctx.session.currentGuest}`)).rows
+                    ctx.session.guestInfoText = `Гость: ${ctx.session.guestInfo.guest_surname} ${ctx.session.guestInfo.guest_name} ${ctx.session.guestInfo.guest_patronymic}\nНомер проживания: ${ctx.session.guestInfo.room_id}\nДаты: ${ctx.session.guestInfo.date_in} \u2014 ${ctx.session.guestInfo.date_out}\n`
+                    ctx.session.guestInfoText += 'Процедуры:\n'
+                    ctx.session.guestProcedures.forEach((item, index) => {
+                        ctx.session.guestInfoText+=`${index}. ${item.procedure_name}\n${item.procedure_start}-${item.procedure_end}\nДата: ${item.procedure_day.split('-').join('.')}\nЦена:${item.procedure_price.split('-').join('.')}\n\n`
+                    })
+                    ctx.session.guestInfoText += 'Болезни:\n'
+                    ctx.session.guestIllness.forEach((item, index) => {
+                        ctx.session.guestInfoText+=`${index}. ${item.illness_name}\n\n`
+                    })
+                    ctx.session.message_id_tempMG.push((await ctx.reply(ctx.session.guestInfoText,  Markup.inlineKeyboard([
+                        [Markup.button.callback('Управления процедурами🩺', 'guestProceduresMenu')],
+                        [Markup.button.callback('Управление болезнями💊', 'guestIllnessMenu')],
+                        [Markup.button.callback('Отмена❌', 'returnToMainMenu')]]))).message_id)
+                }
+                catch(e){
+                    console.log(e)
+                    this.ShowError(ctx)
+                }
+            }
+    })
         return DoctorGuestsScene
     }
 }
