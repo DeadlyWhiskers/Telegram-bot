@@ -24,12 +24,22 @@ const GenAddProcedureMenu = SceneGenerator.GenguestProceduresMenuScene()
 const AddProcedureGuestMenu = SceneGenerator.GenAddProcedureGuestMenu()
 const ProcedureAddConfirmation = SceneGenerator.GenProcedureAddConfirmation()
 const ProcedureDateAssignment = SceneGenerator.GenProcedureDateAssignment()
+const AdminGuardScene = SceneGenerator.GenAdminGuardScene()
+const AdminMainMenu = SceneGenerator.GenAdminMainMenu()
+const ResAdminMenu = SceneGenerator.GenResAdminMenu()
+const DocAdminMenu = SceneGenerator.GenDocAdminMenu()
+const ChangePricesMenu = SceneGenerator.GenChangePricesMenu()
+const RoomPriceScene = SceneGenerator.GenRoomPriceScene()
+const RoomPriceChangeInput = SceneGenerator.GenRoomPriceChangeInput()
+const FoodPriceScene = SceneGenerator.GenFoodPriceScene()
+const FoodPriceChangeInput = SceneGenerator.GenFoodPriceChangeInput()
 
 //Using the scenes
 const stage = new Scenes.Stage([MainScene, DateInScene, DaysOutScene, PeopleAmountScene, RoomScene, FoodScene, ConfirmationScene, GuestsScene,
     DoctorGuardScene, DoctorNameScene, DoctorSpecializationScene, DoctorMainMenu, ProceduresMenu, AddProcedureMenu,
     DoctorGuestsScene, GuestIllnessMenuScene, GuestIllnessAddScene, GenAddProcedureMenu, AddProcedureGuestMenu,
-    ProcedureAddConfirmation, ProcedureDateAssignment])
+    ProcedureAddConfirmation, ProcedureDateAssignment, AdminGuardScene, AdminMainMenu, ResAdminMenu, DocAdminMenu,
+    ChangePricesMenu, RoomPriceScene, RoomPriceChangeInput, FoodPriceScene, FoodPriceChangeInput])
 bot.use(session())
 bot.use(stage.middleware())
 

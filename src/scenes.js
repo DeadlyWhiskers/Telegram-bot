@@ -29,6 +29,7 @@ class SceneGen {
 reply_markup: Markup.inlineKeyboard([
                 [Markup.button.callback('Цены и корпуса🏢','pricelist'),
                 Markup.button.callback('Узнать о питании🥐','foodlist')],
+                [Markup.button.callback('Процедуры❤️','procedureslist')],
                 [Markup.button.callback('Бронь🗓️','reservationMenu')]
             ]).reply_markup
         })).message_id)
@@ -51,14 +52,7 @@ reply_markup: Markup.inlineKeyboard([
         })
         MainScene.action('adminMenu', async (ctx) => {
             this.ClearScreen(ctx)
-            ctx.session.message_id_tempMG.push((await ctx.replyWithPhoto({source: './photos/shodan.jfif'}, 
-            {
-                caption: `Здравствуйте, ${ctx.update.callback_query.from.first_name}!
-Добро пожаловать в меню администратора, что вы хотите сделать?`,
-                reply_markup: Markup.inlineKeyboard(
-                    [Markup.button.callback('Выход из меню❌','reenterMenu')]
-                ).reply_markup
-            })).message_id)
+            ctx.scene.enter('AdminGuardScene')
         })
         MainScene.action('reenterMenu', async (ctx) => {
             this.ClearScreen(ctx)
@@ -112,6 +106,21 @@ reply_markup: Markup.inlineKeyboard([
                     result.forEach((item) => ctx.session.message_id_tempMG.push(item['message_id']))
                     ctx.reply('ㅤ', Markup.inlineKeyboard([
                     Markup.button.callback('В главное меню🏠', 'reenterMenu')])).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))})
+            }).catch(e => {
+                console.log(e)
+                this.ShowError(ctx)
+            })
+        })
+        MainScene.action('procedureslist', async (ctx) => {
+            await this.ClearScreen(ctx)
+            userPool.query('select distinct procedure_name, procedure_price from procedure_').then(result => {
+                var messageText = `В нашем санатории вы сможете посетить самые разнообразные процедуры для укрепления своего здоровья. В данный момент мы предлагаем:`
+                result.rows.forEach((item, index) => {
+                    messageText += '\n' + (index+1) + ' *' + item.procedure_name + '*' + '\n' + 'Цена: ' + item.procedure_price
+                    + ' руб.'
+                })
+                    ctx.replyWithPhoto({source: './photos/procedures.png'}, {caption: messageText, reply_markup: Markup.inlineKeyboard([
+                    Markup.button.callback('В главное меню🏠', 'reenterMenu')]).reply_markup, parse_mode: 'Markdown'}).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
             }).catch(e => {
                 console.log(e)
                 this.ShowError(ctx)
@@ -555,10 +564,11 @@ ${ctx.session.guests}`,
         DoctorMainMenu.enter(async (ctx) => {
             ctx.session.message_id_tempMG.push((await ctx.replyWithPhoto({source: './photos/doctor.jpg'}, 
             {
-                caption: `Здравствуйте, ${ctx.session.doctorInfo.doctor_name} ${ctx.session.doctorInfo.doctor_patronymic}, Добро пожаловать в меню врача, что вы хотите сделать?`,
+                caption: `Здравствуйте, ${ctx.session.doctorInfo.doctor_name} ${ctx.session.doctorInfo.doctor_patronymic}! Добро пожаловать в меню врача, что вы хотите сделать?`,
                 reply_markup: Markup.inlineKeyboard([
                     [Markup.button.callback('Управление процедурами🩺','proceduresMenu')],
                     [Markup.button.callback('Работы с гостями🙋','guestsMenu')],
+                    [Markup.button.callback('Удалить просроченные записи🗑️','removeExpiredProcedures')],
                     [Markup.button.callback('Выход из меню❌','returnToMainMenu')]
                 ]
                 ).reply_markup
@@ -567,6 +577,18 @@ ${ctx.session.guests}`,
         DoctorMainMenu.action('returnToMainMenu', async ctx => {
             await this.ClearScreen(ctx)
             ctx.scene.enter('MainScene')
+        })
+        DoctorMainMenu.action('removeExpiredProcedures', async ctx => {
+            await this.ClearScreen(ctx)
+            try{
+                doctorPool.query('select delete_expired_procedures()')
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+            ctx.session.message_id_tempMG.push((await ctx.reply('Просроченные записи на процедуры удалены')).message_id)
+            ctx.scene.reenter()
         })
         DoctorMainMenu.action('guestsMenu', async ctx => {
             await this.ClearScreen(ctx)
@@ -711,7 +733,7 @@ ${ctx.session.guests}`,
                     ctx.session.guestInfo = (await doctorPool.query(`select guest_surname, guest_name, guest_patronymic,  to_char(date_in, 'YYYY-MM-DD') as date_in,  to_char(date_out, 'YYYY-MM-DD') as date_out, room_id from guest join reservation_rel on reservation_rel.guest_id = guest.guest_id join reservation on reservation_rel.reservation_id = reservation.reservation_id where guest.guest_id = ${ctx.session.currentGuest}`)).rows[0]
                     ctx.session.guestProcedures = (await doctorPool.query(`select procedure_name, to_char(procedure_start, 'HH24:MI') as procedure_start, to_char(procedure_end, 'HH24:MI') as procedure_end,  to_char(procedure_day, 'DD-MM') as procedure_day, procedure_price from procedure_appointment join procedure_ on procedure_appointment.procedure_id = procedure_.procedure_id where guest_id = ${ctx.session.currentGuest}`)).rows
                     ctx.session.guestIllness = (await doctorPool.query(`select illness_name from illness where guest_id = ${ctx.session.currentGuest}`)).rows
-                    ctx.session.guestInfoText = `Гость: ${ctx.session.guestInfo.guest_surname} ${ctx.session.guestInfo.guest_name} ${ctx.session.guestInfo.guest_patronymic}\nНомер проживания: ${ctx.session.guestInfo.room_id}\nДаты: ${ctx.session.guestInfo.date_in} \u2014 ${ctx.session.guestInfo.date_out}\n`
+                    ctx.session.guestInfoText = `Гость: ${ctx.session.guestInfo.guest_surname} ${ctx.session.guestInfo.guest_name} ${ctx.session.guestInfo.guest_patronymic}\nНомер проживания: ${ctx.session.guestInfo.room_id}\nДаты: ${ctx.session.guestInfo.date_in.split('-').join('.')} \u2014 ${ctx.session.guestInfo.date_out.split('-').join('.')}\n`
                     ctx.session.guestInfoText += 'Процедуры:\n'
                     ctx.session.guestProcedures.forEach((item, index) => {
                         ctx.session.guestInfoText+=`${index+1}. ${item.procedure_name}\n${item.procedure_start}-${item.procedure_end}\nДата: ${item.procedure_day.split('-').join('.')}\nЦена:${item.procedure_price} руб.\n\n`
@@ -975,6 +997,415 @@ ${ctx.session.guests}`,
         })
         return ProcedureAddConfirmation
     }
+    GenAdminGuardScene(){
+        const AdminGuardScene = new Scenes.BaseScene('AdminGuardScene')
+        AdminGuardScene.enter(async (ctx) => {
+            ctx.session.message_id_tempMG.push((await ctx.reply('Для входа в меню введите пароль:', Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
+        })
+        AdminGuardScene.action('returnToMainMenu', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('MainScene')
+        })
+        AdminGuardScene.on(message('text'), async ctx => {
+            ctx.session.message_id_tempMG.push(ctx.message.message_id)
+            if(ctx.message.text != process.env.ADMIN_PASSWORD) {
+                await this.ClearScreen(ctx)
+                ctx.session.message_id_tempMG.push((await ctx.reply('Пароль введён неверно', Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
+            }
+            else {
+                await this.ClearScreen(ctx)
+                ctx.scene.enter('AdminMainMenu')
+            }
+        })
+        return AdminGuardScene
+    }
+    GenAdminMainMenu(){
+        const AdminMainMenu = new Scenes.BaseScene('AdminMainMenu')
+        AdminMainMenu.enter(async (ctx) => {
+            ctx.session.message_id_tempMG.push((await ctx.replyWithPhoto({source: './photos/shodan.jfif'}, 
+            {
+                caption: `Здравствуйте, ${ctx.from.first_name}!
+Добро пожаловать в меню администратора, что вы хотите сделать?`,
+                reply_markup: Markup.inlineKeyboard([
+                    [Markup.button.callback('Просмотр броней🗓️','reservationMenu')],
+                    [Markup.button.callback('Управление врачами👨‍⚕️','docAdminMenu')],
+                    [Markup.button.callback('Изменение цен💸','changePrices')],
+                    [Markup.button.callback('Удалить просроченные брони🗑️','removeExpiredReservations')],
+                    [Markup.button.callback('Выход из меню❌','returnToMainMenu')]
+                ]
+                ).reply_markup
+            })).message_id)
+        })
+        AdminMainMenu.action('removeExpiredReservations', async ctx => {
+            await this.ClearScreen(ctx)
+            try{
+                adminPool.query('select delete_expired_reservations()')
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+            ctx.session.message_id_tempMG.push((await ctx.reply('Просроченные брони удалены')).message_id)
+            ctx.scene.reenter()
+        })
+        AdminMainMenu.action('returnToMainMenu', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('MainScene')
+        })
+        AdminMainMenu.action('docAdminMenu', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('DocAdminMenu')
+        })
+        AdminMainMenu.action('changePrices', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('ChangePricesMenu')
+        })
+        AdminMainMenu.action('reservationMenu', async ctx => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('ResAdminMenu')
+        })
+        return AdminMainMenu
+    }
+    GenResAdminMenu(){
+        const ResAdminMenu = new Scenes.BaseScene('ResAdminMenu')
+        ResAdminMenu.enter(async (ctx) => {
+            try{
+                ctx.session.reservationsAll = (await adminPool.query(`select extract(day from date_out::timestamp-date_in::timestamp) as nights, reservation_id, room.room_id, building_name, to_char(date_in, 'YYYY-MM-DD') as date_in, to_char(date_out, 'YYYY-MM-DD') as date_out, people_amount from reservation join room on reservation.room_id = room.room_id join building on building.building_id = room.building_id order by date_in`)).rows
+                ctx.session.buttonlist = []
+                ctx.session.reservationsAll.forEach((item) => {
+                    ctx.session.buttonText = ''
+                    ctx.session.date_in = new Date(item.date_in).setHours(0,0,0,0)
+                    ctx.session.date_out = new Date(item.date_out).setHours(0,0,0,0)
+                    if (ctx.session.date_in > new Date().setHours(0,0,0,0)) ctx.session.buttonText = '⏱️ '
+                    else if (ctx.session.date_in <= new Date().setHours(0,0,0,0) && ctx.session.date_out >= new Date().setHours(0,0,0,0)) ctx.session.buttonText = '✅ '
+                    else if (ctx.session.date_out < new Date().setHours(0,0,0,0)) ctx.session.buttonText = '❌ '
+                    ctx.session.buttonText += `${item.building_name.slice(0,3)}-${item.room_id} ${item.date_in.split('-').join('.')} \u2014 ${item.date_out.split('-').join('.')} (${item.nights}) Чел:${item.people_amount}`
+                    ctx.session.buttonlist.push([Markup.button.callback(ctx.session.buttonText,item.reservation_id)])
+                });
+                ctx.session.buttonlist.push([Markup.button.callback('Выход❌', 'returnToMainMenu')])
+                ctx.session.totalBeds = (await adminPool.query('select sum(capacity) from room')).rows[0].sum
+                ctx.session.currentPeople = (await adminPool.query(`select sum(people_amount) from reservation where (NOW()::DATE between date_in and date_out)`)).rows[0].sum
+                ctx.session.message_id_tempMG.push((await ctx.reply(`Текущая заполненность санатория: ${ctx.session.currentPeople}/${ctx.session.totalBeds}.`,
+                Markup.inlineKeyboard(ctx.session.buttonlist))).message_id)
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+        })
+        ResAdminMenu.action(/.*/, async (ctx) => {
+            await this.ClearScreen(ctx)
+                if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('AdminMainMenu')
+                else if(ctx.update.callback_query.data == 'Cancel') ctx.scene.reenter()
+                else if(ctx.update.callback_query.data == 'deleteRes') 
+                {
+                    ctx.reply(`Вы действительно хотите удалить бронь?:`,
+                    Markup.inlineKeyboard([
+                        Markup.button.callback('Да✅', 'deleteResQuery'),
+                        Markup.button.callback('Нет❌', 'Cancel')
+                    ])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+                }
+                else if(ctx.update.callback_query.data == 'deleteResQuery') 
+                {
+                    userPool.query(`select delete_reservation(${ctx.session.currentReservationId})`).then(()=>{
+                        ctx.reply(`Бронь успешно удалена`,
+                        Markup.inlineKeyboard([
+                            Markup.button.callback('Понятно👍', 'Cancel')
+                        ])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+                    }).catch(e => {
+                        console.log(e)
+                        this.ShowError(ctx)
+                    })
+                }
+                else {
+                    ctx.session.currentReservationId = ctx.update.callback_query.data
+                    // ctx.scene.enter('RoomScene')
+                    ReservationInfo(ctx)
+                }
+            })
+            function ShowError(ctx){
+                ctx.reply('Извините, произошла ошибка', 
+                    Markup.inlineKeyboard([
+                    Markup.button.callback('В главное меню', 'returnToMainMenu')])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+            }
+            async function ReservationInfo(ctx) {
+                try{
+                    ctx.session.reservation = (await adminPool.query(`select building_name, room.room_id, feeding_type.feeding_name, reservation.reservation_price, to_char(date_in, 'YYYY-MM-DD') as date_in, to_char(date_out, 'YYYY-MM-DD') as date_out,
+                    extract(day from date_out::timestamp-date_in::timestamp) as nights 
+                    from reservation join feeding_type on feeding_type.feeding_id = reservation.feeding_id
+                    join room on room.room_id = reservation.room_id join building on building.building_id = room.building_id where reservation_id = ${ctx.session.currentReservationId}`))
+                    ctx.session.currentResGuestsInfo = (await adminPool.query(`select * from guest join reservation_rel on guest.guest_id = reservation_rel.guest_id
+                    where reservation_id = ${ctx.session.currentReservationId}`))
+                        ctx.session.guests = ''
+                        ctx.session.currentResGuestsInfo.rows.forEach((row, index) => {
+                            ctx.session.guests += `${index+1}. ${row.guest_name} ${row.guest_surname} ${row.guest_patronymic}\nВозраст: ${row.guest_age} Пол:${row.guest_sex}\nТелефон: ${row.phone_number}\n\n`
+                        })
+                        ctx.reply(`Номер брони: ${ctx.session.currentReservationId}, Количество человек: ${ctx.session.currentResGuestsInfo.rowCount}\nНомер: ${ctx.session.reservation.rows[0].room_id}\nДаты:
+${ctx.session.reservation.rows[0].date_in.split('-').join('.')} \u2014 ${ctx.session.reservation.rows[0].date_out.split('-').join('.')} (${ctx.session.reservation.rows[0].nights} ночей).
+Корпус проживания \u2014 ${ctx.session.reservation.rows[0].building_name}
+Тип питания \u2014 ${ctx.session.reservation.rows[0].feeding_name}
+Общая стоимость \u2014 ${ctx.session.reservation.rows[0].reservation_price} руб.
+
+Список проживающих:
+${ctx.session.guests}`, Markup.inlineKeyboard([[Markup.button.callback('Удалить бронь🗑️','deleteRes')],
+[Markup.button.callback('Отмена❌','Cancel')]]
+                        )).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
+                }
+                catch(e){
+                    console.log(e)
+                    ShowError(ctx)
+                }
+            }
+        
+        return ResAdminMenu
+    }
+    GenDocAdminMenu(){
+        const DocAdminMenu = new Scenes.BaseScene('DocAdminMenu')
+        DocAdminMenu.enter(async (ctx) => {
+            try{
+                ctx.session.doctorsAll = (await adminPool.query(`select doctor.doctor_id, doctor_name, doctor_surname, doctor_specialization, count(procedure_id) from doctor join procedure_ on procedure_.doctor_id = doctor.doctor_id group by doctor.doctor_id`)).rows
+                ctx.session.buttonlist = []
+                ctx.session.doctorsAll.forEach((item) => {
+                    ctx.session.buttonlist.push([Markup.button.callback(`${item.doctor_surname} ${item.doctor_name} (${item.doctor_specialization.slice(0,4)}) Проц: ${item.count}`,item.doctor_id)])
+                });
+                ctx.session.buttonlist.push([Markup.button.callback('Выход❌', 'returnToMainMenu')])
+                ctx.session.message_id_tempMG.push((await ctx.reply(`Показаны все доктора и количество их процедур`,
+                Markup.inlineKeyboard(ctx.session.buttonlist))).message_id)
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+        })
+        DocAdminMenu.action(/.*/, async (ctx) => {
+            await this.ClearScreen(ctx)
+                if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('AdminMainMenu')
+                else if(ctx.update.callback_query.data == 'Cancel') ctx.scene.reenter()
+                else if(ctx.update.callback_query.data == 'deleteDoc') 
+                {
+                    ctx.reply(`Вы действительно хотите удалить врача?:`,
+                    Markup.inlineKeyboard([
+                        Markup.button.callback('Да✅', 'deleteDocQuery'),
+                        Markup.button.callback('Нет❌', 'Cancel')
+                    ])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+                }
+                else if(ctx.update.callback_query.data == 'deleteDocQuery') 
+                {
+                    userPool.query(`delete from doctor where doctor_id = ${ctx.session.currentDoctorId}`).then(()=>{
+                        ctx.reply(`Врач успешно удалён`,
+                        Markup.inlineKeyboard([
+                            Markup.button.callback('Понятно👍', 'Cancel')
+                        ])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+                    }).catch(e => {
+                        console.log(e)
+                        this.ShowError(ctx)
+                    })
+                }
+                else {
+                    ctx.session.currentDoctorId = ctx.update.callback_query.data
+                    // ctx.scene.enter('RoomScene')
+                    DoctorInfo(ctx)
+                }
+            })
+            function ShowError(ctx){
+                ctx.reply('Извините, произошла ошибка', 
+                    Markup.inlineKeyboard([
+                    Markup.button.callback('В главное меню', 'returnToMainMenu')])).then(result => ctx.session.message_id_tempMG.push(result.message_id))
+            }
+            async function DoctorInfo(ctx) {
+                try{
+                    ctx.session.doctorInfo = (await doctorPool.query(`select procedure_name, procedure_price, doctor_name, doctor_surname, doctor_patronymic, doctor_specialization, to_char(procedure_start, 'HH24:MI') as procedure_start from procedure_ join doctor on doctor.doctor_id = procedure_.doctor_id where doctor.doctor_id = ${ctx.session.currentDoctorId}`))
+                    console.log(ctx.session.doctorInfo)
+                    ctx.session.messageText = `Информация о враче:\nФИО: ${ctx.session.doctorInfo.rows[0].doctor_surname} ${ctx.session.doctorInfo.rows[0].doctor_name} ${ctx.session.doctorInfo.rows[0].doctor_patronymic}\nСпециализация: ${ctx.session.doctorInfo.rows[0].doctor_specialization}\nВсего процедур: ${ctx.session.doctorInfo.rowCount}`
+                    ctx.session.doctorInfo.rows.forEach((item, index) => {
+                        ctx.session.messageText += `\n${index+1}. ${item.procedure_name} ${item.procedure_start} ${item.procedure_price} руб.`
+                    })
+                    ctx.session.message_id_tempMG.push((await ctx.reply(ctx.session.messageText, Markup.inlineKeyboard([[Markup.button.callback('Удалить врача🗑️','deleteDoc')],
+                    [Markup.button.callback('Отмена❌','Cancel')]]
+                                            ))).message_id)
+                }
+                catch(e)
+                {
+                    console.log(e)
+                    ShowError(ctx)
+                }
+            }
+        
+        return DocAdminMenu
+    }
+    GenChangePricesMenu(){
+        const ChangePricesMenu = new Scenes.BaseScene('ChangePricesMenu')
+        ChangePricesMenu.enter(async (ctx) => {
+            ctx.session.message_id_tempMG.push((await (ctx.reply('Цену чего вы хотите изменить?',
+            Markup.inlineKeyboard([[Markup.button.callback('Цены комнат🏠','changeRoomPrice')],
+            [Markup.button.callback('Цену питания🥐','changeFoodPrice')],
+            [Markup.button.callback('Отмена❌','returnToMainMenu')]]
+                        )))).message_id)
+        })
+        ChangePricesMenu.action('returnToMainMenu', async (ctx) => {
+                await this.ClearScreen(ctx)
+                ctx.scene.enter('AdminMainMenu')
+        })
+        ChangePricesMenu.action('changeRoomPrice', async (ctx) => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('RoomPriceScene')
+        })
+        ChangePricesMenu.action('changeFoodPrice', async (ctx) => {
+        await this.ClearScreen(ctx)
+        ctx.scene.enter('FoodPriceScene')
+        })
+        return ChangePricesMenu
+    }
+    GenRoomPriceScene(){
+        const RoomPriceScene = new Scenes.BaseScene('RoomPriceScene')
+        RoomPriceScene.enter(async (ctx) => {
+            try{
+                ctx.session.buildings = (await adminPool.query(`select * from building`)).rows
+                ctx.session.buttonlist = []
+                ctx.session.buildings.forEach((item) => {
+                    ctx.session.buttonlist.push([Markup.button.callback(`${item.building_name} ${item.room_price}`,item.building_id)])
+                });
+                ctx.session.buttonlist.push([Markup.button.callback('Выход❌', 'returnToMainMenu')])
+                ctx.session.message_id_tempMG.push((await ctx.reply(`Выберите корпус, цену которого вы хотите изменить:`,
+                Markup.inlineKeyboard(ctx.session.buttonlist))).message_id)
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+        })
+        RoomPriceScene.action(/.*/, async (ctx) => {
+            await this.ClearScreen(ctx)
+                if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('ChangePricesMenu')
+                else {
+                    ctx.session.buildingsId = ctx.update.callback_query.data
+                    // ctx.scene.enter('RoomScene')
+                    ctx.scene.enter('RoomPriceChangeInput')
+                }
+            })
+        
+        return RoomPriceScene
+    }
+    GenRoomPriceChangeInput(){
+        const RoomPriceChangeInput = new Scenes.BaseScene('RoomPriceChangeInput')
+        RoomPriceChangeInput.enter(async (ctx) => {
+            try{
+                ctx.session.buildingInfo = (await adminPool.query(`select * from building where building_id = ${ctx.session.buildingsId}`)).rows[0]
+                ctx.session.message_id_tempMG.push((await ctx.reply(`Введите новую цену для корпуса ${ctx.session.buildingInfo.building_name}\n(Текущая цена: ${ctx.session.buildingInfo.room_price} руб.):`,
+                Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+        })
+        RoomPriceChangeInput.action('returnToMainMenu', async (ctx) => {
+                await this.ClearScreen(ctx)
+                ctx.scene.enter('ChangePricesMenu')
+        })
+        RoomPriceChangeInput.on(message('text'), async (ctx) => {
+            ctx.session.newPrice = ctx.message.text
+            ctx.session.message_id_tempMG.push(ctx.message.message_id)
+            await this.ClearScreen(ctx)
+            if(isNaN(ctx.session.newPrice)){
+                ctx.session.message_id_tempMG.push((await ctx.reply('Введите число')).message_id)
+                ctx.scene.reenter()
+            }
+            else if(parseInt(ctx.session.newPrice) <= 0){
+                ctx.session.message_id_tempMG.push((await ctx.reply('Введите нормальное число')).message_id)
+                ctx.scene.reenter()
+            }
+            else{
+                try{
+                    await adminPool.query(`update building set room_price = ${ctx.session.newPrice} where building_id = ${ctx.session.buildingsId}`)
+                    ctx.session.message_id_tempMG.push((await ctx.reply('Цена комнаты успешно изменена')).message_id)
+                    ctx.scene.enter('RoomPriceScene')
+                }
+                catch(e){
+                    console.log(e)
+                    this.ShowError(ctx)
+                }
+            }
+    })
+        
+        return RoomPriceChangeInput
+    }
+//-----------------------------------------
+    GenFoodPriceScene(){
+        const FoodPriceScene = new Scenes.BaseScene('FoodPriceScene')
+        FoodPriceScene.enter(async (ctx) => {
+            try{
+                ctx.session.allFood = (await adminPool.query(`select * from feeding_type`)).rows
+                ctx.session.buttonlist = []
+                ctx.session.allFood.forEach((item) => {
+                    ctx.session.buttonlist.push([Markup.button.callback(`${item.feeding_name} ${item.feeding_price}`,item.feeding_id)])
+                });
+                ctx.session.buttonlist.push([Markup.button.callback('Выход❌', 'returnToMainMenu')])
+                ctx.session.message_id_tempMG.push((await ctx.reply(`Выберите тип питания, цену которого вы хотите изменить:`,
+                Markup.inlineKeyboard(ctx.session.buttonlist))).message_id)
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+        })
+        FoodPriceScene.action(/.*/, async (ctx) => {
+            await this.ClearScreen(ctx)
+                if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('ChangePricesMenu')
+                else {
+                    ctx.session.feedingId = ctx.update.callback_query.data
+                    // ctx.scene.enter('RoomScene')
+                    ctx.scene.enter('FoodPriceChangeInput')
+                }
+            })
+        
+        return FoodPriceScene
+    }
+    GenFoodPriceChangeInput(){
+        const FoodPriceChangeInput = new Scenes.BaseScene('FoodPriceChangeInput')
+        FoodPriceChangeInput.enter(async (ctx) => {
+            try{
+                ctx.session.feedingInfo = (await adminPool.query(`select * from feeding_type where feeding_id = ${ctx.session.feedingId}`)).rows[0]
+                ctx.session.message_id_tempMG.push((await ctx.reply(`Введите новую цену для типа питания ${ctx.session.feedingInfo.feeding_name}\n(Текущая цена: ${ctx.session.feedingInfo.feeding_price} руб.):`,
+                Markup.inlineKeyboard([Markup.button.callback('Отмена❌', 'returnToMainMenu')]))).message_id)
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+        })
+        FoodPriceChangeInput.action('returnToMainMenu', async (ctx) => {
+                await this.ClearScreen(ctx)
+                ctx.scene.enter('ChangePricesMenu')
+        })
+        FoodPriceChangeInput.on(message('text'), async (ctx) => {
+            ctx.session.newPrice = ctx.message.text
+            ctx.session.message_id_tempMG.push(ctx.message.message_id)
+            await this.ClearScreen(ctx)
+            if(isNaN(ctx.session.newPrice)){
+                ctx.session.message_id_tempMG.push((await ctx.reply('Введите число')).message_id)
+                ctx.scene.reenter()
+            }
+            else if(parseInt(ctx.session.newPrice) <= 0){
+                ctx.session.message_id_tempMG.push((await ctx.reply('Введите нормальное число')).message_id)
+                ctx.scene.reenter()
+            }
+            else{
+                try{
+                    await adminPool.query(`update feeding_type set feeding_price = ${ctx.session.newPrice} where feeding_id = ${ctx.session.feedingId}`)
+                    ctx.session.message_id_tempMG.push((await ctx.reply('Цена типа питания успешно изменена')).message_id)
+                    ctx.scene.enter('FoodPriceScene')
+                }
+                catch(e){
+                    console.log(e)
+                    this.ShowError(ctx)
+                }
+            }
+    })
+        
+        return FoodPriceChangeInput
+    }
 }
+
 
 module.exports = SceneGen
