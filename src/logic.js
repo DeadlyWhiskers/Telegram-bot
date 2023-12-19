@@ -20,11 +20,16 @@ const AddProcedureMenu = SceneGenerator.GenAddProcedureMenu()
 const DoctorGuestsScene = SceneGenerator.GenDoctorGuestsScene()
 const GuestIllnessMenuScene = SceneGenerator.GenGuestIllnessMenuScene()
 const GuestIllnessAddScene = SceneGenerator.GenGuestIllnessAddScene()
+const GenAddProcedureMenu = SceneGenerator.GenguestProceduresMenuScene()
+const AddProcedureGuestMenu = SceneGenerator.GenAddProcedureGuestMenu()
+const ProcedureAddConfirmation = SceneGenerator.GenProcedureAddConfirmation()
+const ProcedureDateAssignment = SceneGenerator.GenProcedureDateAssignment()
 
 //Using the scenes
 const stage = new Scenes.Stage([MainScene, DateInScene, DaysOutScene, PeopleAmountScene, RoomScene, FoodScene, ConfirmationScene, GuestsScene,
     DoctorGuardScene, DoctorNameScene, DoctorSpecializationScene, DoctorMainMenu, ProceduresMenu, AddProcedureMenu,
-    DoctorGuestsScene, GuestIllnessMenuScene, GuestIllnessAddScene])
+    DoctorGuestsScene, GuestIllnessMenuScene, GuestIllnessAddScene, GenAddProcedureMenu, AddProcedureGuestMenu,
+    ProcedureAddConfirmation, ProcedureDateAssignment])
 bot.use(session())
 bot.use(stage.middleware())
 

@@ -597,7 +597,7 @@ ${ctx.session.guests}`,
         })
         ProceduresMenu.action(/.*/, async (ctx) => {
                 await this.ClearScreen(ctx)
-                    if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorMainMenu')
+                    if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorSpecializationScene')
                     else if(ctx.update.callback_query.data == 'returnToProceduresMenu') ctx.scene.enter('ProceduresMenu')
                     else if(ctx.update.callback_query.data == 'removeProcedure') {
                         doctorPool.query(`delete from procedure_ where procedure_id = ${ctx.session.currentProcedure}`).then(()=>{
@@ -702,7 +702,7 @@ ${ctx.session.guests}`,
         DoctorGuestsScene.action(/.*/, async (ctx) => {
             await this.ClearScreen(ctx)
                 if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorMainMenu')
-                else if(ctx.update.callback_query.data == 'guestProceduresMenu') ctx.scene.enter('DoctorMainMenu')
+                else if(ctx.update.callback_query.data == 'guestProceduresMenu') ctx.scene.enter('guestProceduresMenuScene')
                 else if(ctx.update.callback_query.data == 'guestIllnessMenu') ctx.scene.enter('GuestIllnessMenuScene')
                 else {
                 ctx.session.currentGuest = ctx.update.callback_query.data
@@ -714,7 +714,7 @@ ${ctx.session.guests}`,
                     ctx.session.guestInfoText = `Гость: ${ctx.session.guestInfo.guest_surname} ${ctx.session.guestInfo.guest_name} ${ctx.session.guestInfo.guest_patronymic}\nНомер проживания: ${ctx.session.guestInfo.room_id}\nДаты: ${ctx.session.guestInfo.date_in} \u2014 ${ctx.session.guestInfo.date_out}\n`
                     ctx.session.guestInfoText += 'Процедуры:\n'
                     ctx.session.guestProcedures.forEach((item, index) => {
-                        ctx.session.guestInfoText+=`${index+1}. ${item.procedure_name}\n${item.procedure_start}-${item.procedure_end}\nДата: ${item.procedure_day.split('-').join('.')}\nЦена:${item.procedure_price.split('-').join('.')}\n\n`
+                        ctx.session.guestInfoText+=`${index+1}. ${item.procedure_name}\n${item.procedure_start}-${item.procedure_end}\nДата: ${item.procedure_day.split('-').join('.')}\nЦена:${item.procedure_price} руб.\n\n`
                     })
                     ctx.session.guestInfoText += 'Болезни:\n'
                     ctx.session.guestIllness.forEach((item, index) => {
@@ -791,7 +791,7 @@ ${ctx.session.guests}`,
             ctx.session.newIllnessName = ctx.message.text
             try{
                 await doctorPool.query(`insert into illness values(${ctx.session.currentGuest}, '${ctx.session.newIllnessName}')`)
-                ctx.session.message_id_tempMG.push((ctx.reply(`Болезнь успешно добавлена`,
+                ctx.session.message_id_tempMG.push((await ctx.reply(`Болезнь успешно добавлена`,
                 Markup.inlineKeyboard([
                     Markup.button.callback('Понятно👍', 'returnToMainMenu')
                 ]))).message_id)
@@ -802,6 +802,178 @@ ${ctx.session.guests}`,
             }
         })
         return GuestIllnessAddScene
+    }
+    GenguestProceduresMenuScene(){
+        const guestProceduresMenuScene = new Scenes.BaseScene('guestProceduresMenuScene')
+        guestProceduresMenuScene.enter(async (ctx) => {
+            doctorPool.query(`select procedure_.procedure_id, doctor_id, procedure_name, procedure_price, to_char(procedure_start, 'HH24:MI') as procedure_start, to_char(procedure_end, 'HH24:MI') as procedure_end, to_char(procedure_day, 'DD-MM') as procedure_day, cabinet from procedure_ join procedure_appointment on procedure_appointment.procedure_id = procedure_.procedure_id where guest_id = ${ctx.session.currentGuest}`).then(result => {
+                ctx.session.buttonlist = []
+                result.rows.forEach(item => {
+                    ctx.session.buttonlist.push([Markup.button.callback(`${item.procedure_day.split('-').join('.')} ${item.procedure_start} ${item.procedure_name}`,item.procedure_id)])
+                });
+                ctx.session.buttonlist.push([Markup.button.callback('Добавить➕', 'AddGuestProcedure')])
+                ctx.session.buttonlist.push([Markup.button.callback('Выход❌', 'returnToMainMenu')])
+                ctx.reply('Вот все процедуры гостя. Для удаления выберите соответствующую процедуру',
+                Markup.inlineKeyboard(ctx.session.buttonlist)).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
+            }).catch(e => {
+                console.log(e)
+                this.ShowError(ctx)
+            })
+        })
+        guestProceduresMenuScene.action(/.*/, async (ctx) => {
+                await this.ClearScreen(ctx)
+                    if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorGuestsScene')
+                    else if(ctx.update.callback_query.data == 'returnToProceduresMenu') ctx.scene.enter('ProceduresMenu')
+                    else if(ctx.update.callback_query.data == 'removeProcedure') {
+                        doctorPool.query(`delete from procedure_ where procedure_id = ${ctx.session.currentProcedure}`).then(()=>{
+                            ctx.reply(`Процедура была удалена`,
+                        Markup.inlineKeyboard([Markup.button.callback('Понял✅', 'returnToProceduresMenu')])).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
+                        }).catch(e => {
+                            console.log(e)
+                            this.ShowError(ctx)
+                        })
+                    }
+                    else if(ctx.update.callback_query.data == 'AddGuestProcedure') ctx.scene.enter('AddProcedureGuestMenu')
+                    else {
+                        ctx.session.currentIllness = ctx.update.callback_query.data
+                        // ctx.scene.enter('RoomScene')
+                        ctx.session.message_id_tempMG.push((await ctx.reply(`Вы действительно хотите удалить ${ctx.session.currentIllness}?`,  Markup.inlineKeyboard([
+                            [Markup.button.callback('Да✅', 'deleteCurIllness')],
+                            [Markup.button.callback('Нет❌', 'doNotDelete')]]))).message_id)
+                        }
+                    })
+        return guestProceduresMenuScene
+    }
+    GenAddProcedureGuestMenu(){
+        const AddProcedureGuestMenu = new Scenes.BaseScene('AddProcedureGuestMenu')
+        AddProcedureGuestMenu.enter(async (ctx) => {
+            doctorPool.query(`select procedure_.procedure_id, doctor_id, procedure_name, procedure_price, to_char(procedure_start, 'HH24:MI') as procedure_start, to_char(procedure_end, 'HH24:MI') as procedure_end, cabinet from procedure_`).then(result => {
+                ctx.session.buttonlist = []
+                result.rows.forEach(item => {
+                    ctx.session.buttonlist.push([Markup.button.callback(`$${item.procedure_price} руб. ${item.procedure_name}, ${item.procedure_start}`,item.procedure_id)])
+                });
+                ctx.session.buttonlist.push([Markup.button.callback('Выход❌', 'returnToMainMenu')])
+                ctx.reply('Выберите процедуру для гостя:',
+                Markup.inlineKeyboard(ctx.session.buttonlist)).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
+            }).catch(e => {
+                console.log(e)
+                this.ShowError(ctx)
+            })
+        })
+        AddProcedureGuestMenu.action(/.*/, async (ctx) => {
+                await this.ClearScreen(ctx)
+                    if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorGuestsScene')
+                    else {
+                        ctx.session.currentProcedureId = ctx.update.callback_query.data
+                        // ctx.scene.enter('RoomScene')
+                        ctx.scene.enter('ProcedureDateAssignment')
+                    }
+                })
+        return AddProcedureGuestMenu
+    }
+    GenProcedureDateAssignment(){
+        const ProcedureDateAssignment = new Scenes.BaseScene('ProcedureDateAssignment')
+        ProcedureDateAssignment.enter(async (ctx) => {
+            try{
+                ctx.session.guestInfo = (await doctorPool.query(`select guest_surname, guest_name, guest_patronymic, to_char(date_in, 'YYYY-MM-DD') as date_in, to_char(date_out, 'YYYY-MM-DD') as date_out, room_id from guest join reservation_rel on reservation_rel.guest_id = guest.guest_id join reservation on reservation_rel.reservation_id = reservation.reservation_id where guest.guest_id = ${ctx.session.currentGuest}`)).rows[0]
+                ctx.session.procedureInfo = (await doctorPool.query(`select procedure_name, to_char(procedure_start, 'HH24:MI') as procedure_start, to_char(procedure_end, 'HH24:MI') as procedure_end from procedure_ where procedure_id = ${ctx.session.currentProcedureId}`)).rows[0]
+                ctx.session.message_id_tempMG.push((await ctx.reply(`Гость: ${ctx.session.guestInfo.guest_surname} ${ctx.session.guestInfo.guest_name} ${ctx.session.guestInfo.guest_patronymic}\nДаты: ${ctx.session.guestInfo.date_in} \u2014 ${ctx.session.guestInfo.date_out}\nПроцедура: ${ctx.session.procedureInfo.procedure_name}\n${ctx.session.procedureInfo.procedure_start} \u2014 ${ctx.session.procedureInfo.procedure_end}\nУкажите дату для назначения процедуры:`, {reply_markup: {force_reply: true, input_field_placeholder: 'YYYY MM DD'}})).message_id)
+                ctx.session.message_id_tempMG.push((await ctx.reply('ㅤ', Markup.inlineKeyboard([
+                    [Markup.button.callback('Сегодня', 'today')],
+                    [Markup.button.callback('Завтра', 'tomorrow')],
+                    [Markup.button.callback('Отмена❌', 'returnToMainMenu')]
+                ]))).message_id)
+
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+            
+        })
+        ProcedureDateAssignment.action('returnToMainMenu', async (ctx) => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('AddProcedureGuestMenu')
+        })
+        ProcedureDateAssignment.action('today', async (ctx) => {
+            await this.ClearScreen(ctx)
+            ctx.session.tempDate = new Date()
+            ctx.session.formattedDate = `to_date('${ctx.session.tempDate.getFullYear()} ${ctx.session.tempDate.getMonth()+1} ${ctx.session.tempDate.getDate()}', 'YYYY MM DD')`
+            ctx.scene.enter('ProcedureAddConfirmation')
+        })
+        ProcedureDateAssignment.action('tomorrow', async (ctx) => {
+            await this.ClearScreen(ctx)
+            ctx.session.tempDate = new Date()
+            ctx.session.tempDate.setDate(ctx.session.tempDate.getDate() + 1)
+            if(ctx.session.tempDate.setHours(0,0,0,0) < new Date(ctx.session.guestInfo.date_out).setHours(0,0,0,0)){
+                await ctx.session.message_id_tempMG.push((await ctx.reply('Дата должна быть не позже отъезда гостя')).message_id)
+                ctx.scene.reenter()
+            }
+            else{
+                await this.ClearScreen(ctx)
+                ctx.session.formattedDate = `to_date('${ctx.session.tempDate.getFullYear()} ${ctx.session.tempDate.getMonth()+1} ${ctx.session.tempDate.getDate()}', 'YYYY MM DD')`
+                ctx.scene.enter('ProcedureAddConfirmation')
+            }
+        })
+        ProcedureDateAssignment.on(message('text'), async ctx => {
+            ctx.session.date = []
+                ctx.session.message_id_tempMG.push(ctx.message.message_id)
+            if (ctx.message.text.trim().split(/\s+/).length != 3) {
+                    await this.ClearScreen(ctx)
+                    await ctx.session.message_id_tempMG.push((await ctx.reply('Дата была введена неверно')).message_id)
+                    ctx.scene.reenter()
+            }
+            else{
+                await this.ClearScreen(ctx)
+                ctx.message.text.trim().split(/\s+/).forEach(async item => {
+                if(isNaN(item)){
+                    await ctx.session.message_id_tempMG.push((await ctx.reply('Дата была введена неверно')).message_id)
+                    ctx.scene.reenter()
+                }
+                ctx.session.date.push(item)})
+                if(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`) == 0 ||
+                isNaN(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`)) ||
+                new Date(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`).setHours(0,0,0,0) < new Date().setHours(0,0,0,0))
+                {
+                    console.log(Date.parse(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`), new Date())
+                    await ctx.session.message_id_tempMG.push((await ctx.reply('Дата должна быть не раньше сегодняшней')).message_id)
+                    ctx.scene.reenter()
+                }
+                else if(new Date(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`).setHours(0,0,0,0) > new Date(ctx.session.guestInfo.date_out).setHours(0,0,0,0)){
+                    await ctx.session.message_id_tempMG.push((await ctx.reply('Дата должна быть не позже отъезда гостя')).message_id)
+                    ctx.scene.reenter()
+                }
+                else{
+                    await this.ClearScreen(ctx)
+                    console.log(new Date(`${ctx.session.date[0]}-${ctx.session.date[1]}-${ctx.session.date[2]}`).setHours(0,0,0,0), new Date(ctx.session.guestInfo.date_out).setHours(0,0,0,0))
+                    ctx.session.formattedDate = `to_date('${ctx.session.date[0]} ${ctx.session.date[1]} ${ctx.session.date[2]}', 'YYYY MM DD')`
+                    ctx.scene.enter('ProcedureAddConfirmation')
+                }
+            }
+            })
+        return ProcedureDateAssignment
+    }
+    GenProcedureAddConfirmation(){
+        const ProcedureAddConfirmation = new Scenes.BaseScene('ProcedureAddConfirmation')
+        ProcedureAddConfirmation.enter(async (ctx) => {
+            try{
+                doctorPool.query(`insert into procedure_appointment values(${ctx.session.currentGuest}, ${ctx.session.currentProcedureId}, ${ctx.session.formattedDate})`)
+                ctx.session.message_id_tempMG.push((ctx.reply(`Процедура успешно назначена`,
+                Markup.inlineKeyboard([
+                    Markup.button.callback('Понятно👍', 'returnToMainMenu')
+                ]))).message_id)
+            }
+            catch(e){
+                console.log(e)
+                this.ShowError(ctx)
+            }
+            
+        })
+        ProcedureAddConfirmation.action('returnToMainMenu', async (ctx) => {
+            await this.ClearScreen(ctx)
+            ctx.scene.enter('guestProceduresMenuScene')
+        })
+        return ProcedureAddConfirmation
     }
 }
 
