@@ -619,7 +619,7 @@ ${ctx.session.guests}`,
         })
         ProceduresMenu.action(/.*/, async (ctx) => {
                 await this.ClearScreen(ctx)
-                    if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorSpecializationScene')
+                    if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorMainMenu')
                     else if(ctx.update.callback_query.data == 'returnToProceduresMenu') ctx.scene.enter('ProceduresMenu')
                     else if(ctx.update.callback_query.data == 'removeProcedure') {
                         doctorPool.query(`delete from procedure_ where procedure_id = ${ctx.session.currentProcedure}`).then(()=>{
@@ -774,6 +774,7 @@ ${ctx.session.guests}`,
         })
         GuestIllnessMenuScene.action(/.*/, async (ctx) => {
                 await this.ClearScreen(ctx)
+                console.log(ctx.update.callback_query.data)
                     if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorGuestsScene')
                     else if(ctx.update.callback_query.data == 'doNotDelete') ctx.scene.reenter()
                     else if(ctx.update.callback_query.data == 'deleteCurIllness') {
@@ -845,11 +846,11 @@ ${ctx.session.guests}`,
         guestProceduresMenuScene.action(/.*/, async (ctx) => {
                 await this.ClearScreen(ctx)
                     if(ctx.update.callback_query.data == 'returnToMainMenu') ctx.scene.enter('DoctorGuestsScene')
-                    else if(ctx.update.callback_query.data == 'returnToProceduresMenu') ctx.scene.enter('ProceduresMenu')
-                    else if(ctx.update.callback_query.data == 'removeProcedure') {
+                    else if(ctx.update.callback_query.data == 'doNotDelete') ctx.scene.enter('ProceduresMenu')
+                    else if(ctx.update.callback_query.data == 'deleteCurProc') {
                         doctorPool.query(`delete from procedure_ where procedure_id = ${ctx.session.currentProcedure}`).then(()=>{
                             ctx.reply(`Процедура была удалена`,
-                        Markup.inlineKeyboard([Markup.button.callback('Понял✅', 'returnToProceduresMenu')])).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
+                        Markup.inlineKeyboard([Markup.button.callback('Понял✅', 'returnToMainMenu')])).then(result1 => ctx.session.message_id_tempMG.push(result1.message_id))
                         }).catch(e => {
                             console.log(e)
                             this.ShowError(ctx)
@@ -857,10 +858,10 @@ ${ctx.session.guests}`,
                     }
                     else if(ctx.update.callback_query.data == 'AddGuestProcedure') ctx.scene.enter('AddProcedureGuestMenu')
                     else {
-                        ctx.session.currentIllness = ctx.update.callback_query.data
+                        ctx.session.currentProcedure = ctx.update.callback_query.data
                         // ctx.scene.enter('RoomScene')
-                        ctx.session.message_id_tempMG.push((await ctx.reply(`Вы действительно хотите удалить ${ctx.session.currentIllness}?`,  Markup.inlineKeyboard([
-                            [Markup.button.callback('Да✅', 'deleteCurIllness')],
+                        ctx.session.message_id_tempMG.push((await ctx.reply(`Вы действительно хотите удалить ${ctx.session.currentProcedure}?`,  Markup.inlineKeyboard([
+                            [Markup.button.callback('Да✅', 'deleteCurProc')],
                             [Markup.button.callback('Нет❌', 'doNotDelete')]]))).message_id)
                         }
                     })
